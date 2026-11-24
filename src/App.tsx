@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -6,17 +6,22 @@ import {
   FileSpreadsheet,
   FileText,
   HardDrive,
+  ImagePlus,
   List,
   Loader2,
   Lock,
   Pencil,
   Plus,
   Receipt,
+  Search,
   Trash2,
+  Upload,
   Wallet,
+  X,
 } from 'lucide-react';
 import { CategoryIcon } from './components/CategoryIcon';
 import { DeleteModal } from './components/DeleteModal';
+import { ImportModal } from './components/ImportModal';
 import { MonthlyStatsView } from './components/MonthlyStatsView';
 import { Toast, type ToastState } from './components/Toast';
 import { TransactionModal } from './components/TransactionModal';
@@ -29,6 +34,11 @@ import {
 } from './types/ledger';
 import { exportToExcel, exportToPdf } from './utils/exportLedger';
 import {
+  parseExcelFile,
+  parseImageFile,
+  type ImportCandidate,
+} from './utils/importLedger';
+import {
   generateTransactionId,
   loadTransactions,
   saveTransactions,
@@ -39,6 +49,7 @@ export default function App() {
   const [transactions, setTransactions] = useState<Transaction[]>(() => loadTransactions());
   const [activeView, setActiveView] = useState<'ledger' | 'stats'>('ledger');
   const [filter, setFilter] = useState<FilterType>('all');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
@@ -47,6 +58,17 @@ export default function App() {
   const [deleteTarget, setDeleteTarget] = useState<Transaction | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+
+  const [isParsingImage, setIsParsingImage] = useState(false);
+  const [isParsingExcel, setIsParsingExcel] = useState(false);
+  const [importModalState, setImportModalState] = useState<{
+    isOpen: boolean;
+    sourceType: 'image' | 'excel';
+    candidates: ImportCandidate[];
+  }>({ isOpen: false, sourceType: 'image', candidates: [] });
+
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const excelInputRef = useRef<HTMLInputElement | null>(null);
 
   const [toast, setToast] = useState<ToastState | null>(null);
 
@@ -154,9 +176,81 @@ export default function App() {
   }, [transactions]);
 
   const filteredTransactions = useMemo(() => {
-    if (filter === 'all') return transactions;
-    return transactions.filter((item) => item.type === filter);
-  }, [transactions, filter]);
+    const normalizedQuery = searchQuery.trim().toLowerCase();
+    return transactions.filter((item) => {
+      if (filter !== 'all' && item.type !== filter) return false;
+      if (!normalizedQuery) return true;
+      const categoryName = getCategoryMeta(item.type, item.category).name.toLowerCase();
+      return (
+        item.title.toLowerCase().includes(normalizedQuery) ||
+        categoryName.includes(normalizedQuery) ||
+        item.date.includes(normalizedQuery)
+      );
+    });
+  }, [transactions, filter, searchQuery]);
+
+  const handleImageFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    setIsParsingImage(true);
+    try {
+      const candidates = await parseImageFile(file);
+      setImportModalState({
+        isOpen: true,
+        sourceType: 'image',
+        candidates,
+      });
+    } catch (error) {
+      const msg =
+        error instanceof Error ? error.message : '이미지에서 내역을 추출하지 못했습니다.';
+      showToast(msg, 'error');
+    } finally {
+      setIsParsingImage(false);
+    }
+  };
+
+  const handleExcelFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    setIsParsingExcel(true);
+    try {
+      const candidates = await parseExcelFile(file);
+      setImportModalState({
+        isOpen: true,
+        sourceType: 'excel',
+        candidates,
+      });
+    } catch (error) {
+      const msg =
+        error instanceof Error ? error.message : '엑셀 파일을 읽는 중 오류가 발생했습니다.';
+      showToast(msg, 'error');
+    } finally {
+      setIsParsingExcel(false);
+    }
+  };
+
+  const handleConfirmImport = (items: TransactionDraft[]) => {
+    if (items.length === 0) return;
+    const baseTime = Date.now();
+    const newRecords: Transaction[] = items.map((draft, idx) => ({
+      id: generateTransactionId(),
+      type: draft.type,
+      amount: draft.amount,
+      category: draft.category,
+      title: draft.title,
+      date: draft.date,
+      createdAt: baseTime + idx,
+    }));
+
+    if (persistList([...newRecords, ...transactions])) {
+      setImportModalState((prev) => ({ ...prev, isOpen: false, candidates: [] }));
+      showToast(`${newRecords.length}건의 내역이 추가되었습니다.`);
+    }
+  };
 
   const categoryBreakdown = useMemo(() => {
     if (totalExpense <= 0) return [];
@@ -234,8 +328,8 @@ export default function App() {
 
       {/* Main Content */}
       <div className="flex-1 w-full max-w-5xl mx-auto px-4 sm:px-6 py-5 sm:py-8 pb-24 lg:pb-10">
-        {/* Workspace View Switcher */}
-        <div className="mb-5 flex items-center justify-between gap-3">
+        {/* Workspace View Switcher & Import Actions */}
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div
             role="tablist"
             aria-label="화면 전환"
@@ -271,16 +365,61 @@ export default function App() {
             </button>
           </div>
 
-          {activeView === 'stats' && (
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleImageFileChange}
+              className="hidden"
+            />
+            <input
+              ref={excelInputRef}
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              onChange={handleExcelFileChange}
+              className="hidden"
+            />
+
             <button
               type="button"
-              onClick={handleOpenAddModal}
-              className="hidden lg:inline-flex items-center gap-1.5 px-4 py-2.5 min-h-[40px] rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs sm:text-sm shadow-xs transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              onClick={() => imageInputRef.current?.click()}
+              disabled={isParsingImage}
+              className="min-h-[40px] px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-700 text-slate-700 text-xs sm:text-sm font-semibold inline-flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50"
             >
-              <Plus className="w-4 h-4" />
-              <span>내역 추가</span>
+              {isParsingImage ? (
+                <Loader2 className="w-4 h-4 animate-spin text-indigo-600 shrink-0" />
+              ) : (
+                <ImagePlus className="w-4 h-4 text-indigo-600 shrink-0" />
+              )}
+              <span>{isParsingImage ? '이미지 분석 중...' : '이미지로 넣기'}</span>
             </button>
-          )}
+
+            <button
+              type="button"
+              onClick={() => excelInputRef.current?.click()}
+              disabled={isParsingExcel}
+              className="min-h-[40px] px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-emerald-50 hover:border-emerald-200 hover:text-emerald-700 text-slate-700 text-xs sm:text-sm font-semibold inline-flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50"
+            >
+              {isParsingExcel ? (
+                <Loader2 className="w-4 h-4 animate-spin text-emerald-600 shrink-0" />
+              ) : (
+                <Upload className="w-4 h-4 text-emerald-600 shrink-0" />
+              )}
+              <span>{isParsingExcel ? '엑셀 읽는 중...' : '엑셀로 넣기'}</span>
+            </button>
+
+            {activeView === 'stats' && (
+              <button
+                type="button"
+                onClick={handleOpenAddModal}
+                className="hidden lg:inline-flex items-center gap-1.5 px-4 py-2 min-h-[40px] rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs sm:text-sm shadow-xs transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              >
+                <Plus className="w-4 h-4" />
+                <span>내역 추가</span>
+              </button>
+            )}
+          </div>
         </div>
 
         {activeView === 'stats' ? (
@@ -435,27 +574,69 @@ export default function App() {
                   );
                 })}
               </div>
+
+              {/* Real-time Search Bar */}
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="search"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="제목, 내용 또는 카테고리로 검색..."
+                  aria-label="거래 내역 검색"
+                  className="w-full min-h-[42px] pl-10 pr-10 py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-colors"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    aria-label="검색어 지우기"
+                    className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 flex items-center justify-center absolute right-1.5 top-1/2 -translate-y-1/2 transition-colors cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
             </div>
 
             {filteredTransactions.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
                 <div className="w-14 h-14 bg-slate-100 rounded-full flex items-center justify-center mb-3 text-slate-400">
-                  <Receipt className="w-6 h-6" />
+                  {searchQuery.trim() ? (
+                    <Search className="w-6 h-6" />
+                  ) : (
+                    <Receipt className="w-6 h-6" />
+                  )}
                 </div>
                 <p className="text-sm font-semibold text-slate-700">
-                  표시할 거래 내역이 없습니다.
+                  {searchQuery.trim()
+                    ? '검색어에 일치하는 거래 내역이 없습니다.'
+                    : '표시할 거래 내역이 없습니다.'}
                 </p>
                 <p className="text-xs text-slate-500 mt-1 mb-5">
-                  아래 버튼을 눌러 첫 수입이나 지출 내역을 추가해 보세요.
+                  {searchQuery.trim()
+                    ? '다른 검색어를 입력하거나 검색어를 초기화해 보세요.'
+                    : '아래 버튼을 눌러 첫 수입이나 지출 내역을 추가해 보세요.'}
                 </p>
-                <button
-                  type="button"
-                  onClick={handleOpenAddModal}
-                  className="min-h-[44px] px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>첫 내역 추가하기</span>
-                </button>
+                {searchQuery.trim() ? (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="min-h-[44px] px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                    <span>검색 초기화</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleOpenAddModal}
+                    className="min-h-[44px] px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>첫 내역 추가하기</span>
+                  </button>
+                )}
               </div>
             ) : (
               <ul className="divide-y divide-slate-100">
@@ -558,6 +739,18 @@ export default function App() {
         isDeleting={isDeleting}
         onCancel={() => setDeleteTarget(null)}
         onConfirm={handleConfirmDelete}
+      />
+
+      {/* Image / Excel Import Preview Modal */}
+      <ImportModal
+        isOpen={importModalState.isOpen}
+        sourceType={importModalState.sourceType}
+        initialCandidates={importModalState.candidates}
+        isSubmitting={false}
+        onClose={() =>
+          setImportModalState((prev) => ({ ...prev, isOpen: false, candidates: [] }))
+        }
+        onConfirm={handleConfirmImport}
       />
     </div>
   );
