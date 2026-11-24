@@ -1,0 +1,75 @@
+{
+  "entities": {
+    "Transaction": {
+      "title": "Transaction",
+      "description": "A personal income or expense ledger entry belonging to a single authenticated user.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "UID of the authenticated owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "type": {
+          "type": "string",
+          "description": "Transaction direction.",
+          "enum": ["income", "expense"]
+        },
+        "amount": {
+          "type": "integer",
+          "description": "Positive amount in KRW."
+        },
+        "category": {
+          "type": "string",
+          "description": "Category identifier matching the transaction type.",
+          "enum": [
+            "food",
+            "maintenance",
+            "telecom",
+            "insurance",
+            "loan",
+            "academy",
+            "medical",
+            "fuel",
+            "transport",
+            "family",
+            "shopping",
+            "leisure",
+            "etc_exp",
+            "salary",
+            "allowance",
+            "invest",
+            "etc_inc"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "description": "Short memo or merchant description.",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "date": {
+          "type": "string",
+          "description": "Transaction calendar date in YYYY-MM-DD format.",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the transaction was created."
+        }
+      },
+      "required": ["userId", "type", "amount", "category", "title", "date", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "Private personal transactions scoped to the owning user."
+    }
+  }
+}

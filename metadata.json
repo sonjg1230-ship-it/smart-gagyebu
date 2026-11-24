@@ -1,0 +1,6 @@
+{
+  "name": "스마트 실시간 가계부",
+  "description": "나만의 수입과 지출을 실시간으로 기록하고 모든 기기에서 동기화하는 스마트 가계부",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>스마트 실시간 가계부</title>
+    <!-- Tailwind CSS 로드 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome 아이콘 로드 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts: Pretendard / Inter 대체 깔끔한 산세리프 -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            background-color: #f3f4f6;
+            -webkit-tap-highlight-color: transparent;
+        }
+        /* 스크롤바 숨김 처리 (모바일 앱 느낌) */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        /* 부드러운 트랜지션 */
+        .modal-enter {
+            animation: slideUp 0.3s ease-out forwards;
+        }
+        @keyframes slideUp {
+            from { transform: translateY(100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 flex justify-center min-h-screen">
+
+    <!-- 모바일 앱 컨테이너 (최대 너비 제한으로 PC에서도 모바일 뷰 유지) -->
+    <div class="w-full max-w-md bg-white min-h-screen shadow-xl flex flex-col relative overflow-hidden">
+        
+        <!-- 상단 헤더 & 실시간 동기화 상태 표시 -->
+        <header class="bg-indigo-600 text-white px-5 pt-6 pb-8 rounded-b-3xl shadow-md z-10">
+            <div class="flex justify-between items-center mb-4">
+                <div class="flex items-center space-x-2">
+                    <i class="fa-solid fa-wallet text-xl"></i>
+                    <h1 class="text-lg font-bold tracking-tight">스마트 가계부</h1>
+                </div>
+                <!-- 실시간 연동 상태 뱃지 -->
+                <div id="sync-status" class="flex items-center space-x-1.5 bg-indigo-700/80 px-3 py-1 rounded-full text-xs font-medium">
+                    <span id="sync-dot" class="w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></span>
+                    <span id="sync-text">연결 중...</span>
+                </div>
+            </div>
+
+            <!-- 현재 잔액 요약 -->
+            <div class="mt-2">
+                <p class="text-indigo-200 text-xs font-medium mb-1">현재 총 잔액</p>
+                <h2 id="total-balance" class="text-3xl font-bold tracking-tight">0원</h2>
+            </div>
+
+            <!-- 수입 / 지출 요약 카드 -->
+            <div class="grid grid-cols-2 gap-3 mt-5">
+                <div class="bg-white/10 backdrop-blur-sm rounded-2xl p-3.5 border border-white/10">
+                    <div class="flex items-center space-x-2 text-emerald-300 text-xs font-medium mb-1">
+                        <i class="fa-solid fa-arrow-down bg-emerald-500/20 p-1 rounded-full"></i>
+                        <span>총 수입</span>
+                    </div>
+                    <p id="total-income" class="text-lg font-bold text-white truncate">+0원</p>
+                </div>
+                <div class="bg-white/10 backdrop-blur-sm rounded-2xl p-3.5 border border-white/10">
+                    <div class="flex items-center space-x-2 text-rose-300 text-xs font-medium mb-1">
+                        <i class="fa-solid fa-arrow-up bg-rose-500/20 p-1 rounded-full"></i>
+                        <span>총 지출</span>
+                    </div>
+                    <p id="total-expense" class="text-lg font-bold text-white truncate">-0원</p>
+                </div>
+            </div>
+        </header>
+
+        <!-- 필터 및 내역 헤더 -->
+        <div class="px-5 pt-5 pb-2 flex justify-between items-center bg-white">
+            <h3 class="font-bold text-gray-800 text-base">최근 거래 내역</h3>
+            <div class="flex space-x-1 bg-gray-100 p-1 rounded-xl text-xs font-medium">
+                <button onclick="setFilter('all')" id="filter-all" class="px-3 py-1.5 rounded-lg bg-white text-indigo-600 shadow-sm transition">전체</button>
+                <button onclick="setFilter('income')" id="filter-income" class="px-3 py-1.5 rounded-lg text-gray-500 hover:text-gray-700 transition">수입</button>
+                <button onclick="setFilter('expense')" id="filter-expense" class="px-3 py-1.5 rounded-lg text-gray-500 hover:text-gray-700 transition">지출</button>
+            </div>
+        </div>
+
+        <!-- 거래 내역 리스트 영역 -->
+        <main id="transaction-list" class="flex-1 overflow-y-auto px-5 py-2 pb-24 space-y-3 no-scrollbar">
+            <!-- 로딩 스켈레톤 / 빈 상태 안내 -->
+            <div id="empty-state" class="flex flex-col items-center justify-center py-16 text-center text-gray-400">
+                <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-3 text-2xl text-gray-300">
+                    <i class="fa-solid fa-receipt"></i>
+                </div>
+                <p class="text-sm font-medium text-gray-500">아직 기록된 내역이 없습니다.</p>
+                <p class="text-xs mt-1">우측 하단의 + 버튼을 눌러 첫 내역을 추가해보세요!</p>
+            </div>
+        </main>
+
+        <!-- 개인 전용 보안 안내 바 (하단) -->
+        <div class="bg-gray-50 border-t border-gray-200 px-5 py-2.5 flex justify-center items-center text-xs text-gray-500 space-x-1.5">
+            <i class="fa-solid fa-lock text-indigo-500"></i>
+            <span>개인 전용 보관함 · 나만 볼 수 있는 안전한 가계부</span>
+        </div>
+
+        <!-- 플로팅 추가 버튼 (FAB) -->
+        <button onclick="openModal()" aria-label="내역 추가" class="fixed bottom-14 right-6 md:absolute md:bottom-14 md:right-6 w-14 h-14 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-full shadow-lg shadow-indigo-600/30 flex items-center justify-center text-2xl transition-all z-20">
+            <i class="fa-solid fa-plus"></i>
+        </button>
+
+        <!-- 내역 추가 바텀 시트 모달 -->
+        <div id="add-modal" class="fixed inset-0 bg-black/50 z-30 hidden flex items-end justify-center">
+            <div class="bg-white w-full max-w-md rounded-t-3xl p-6 modal-enter shadow-2xl">
+                <div class="flex justify-between items-center mb-5">
+                    <h3 class="text-lg font-bold text-gray-800">새로운 내역 추가</h3>
+                    <button onclick="closeModal()" class="w-8 h-8 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center hover:bg-gray-200">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+
+                <form id="transaction-form" onsubmit="handleAddTransaction(event)" class="space-y-4">
+                    <!-- 수입 / 지출 토글 -->
+                    <div class="grid grid-cols-2 gap-2 p-1 bg-gray-100 rounded-xl">
+                        <button type="button" id="type-expense-btn" onclick="setFormType('expense')" class="py-2.5 rounded-lg text-sm font-bold bg-rose-500 text-white shadow-sm transition">
+                            지출
+                        </button>
+                        <button type="button" id="type-income-btn" onclick="setFormType('income')" class="py-2.5 rounded-lg text-sm font-bold text-gray-600 transition">
+                            수입
+                        </button>
+                    </div>
+                    <input type="hidden" id="entry-type" value="expense">
+
+                    <!-- 금액 입력 -->
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-500 mb-1">금액 (원)</label>
+                        <div class="relative">
+                            <input type="number" id="entry-amount" required min="1" placeholder="0" inputmode="numeric"
+                                class="w-full text-2xl font-bold px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition">
+                            <span class="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">원</span>
+                        </div>
+                    </div>
+
+                    <!-- 카테고리 선택 -->
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-500 mb-1">카테고리</label>
+                        <select id="entry-category" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            <!-- JS에서 동적으로 옵션 렌더링 -->
+                        </select>
+                    </div>
+
+                    <!-- 내용(메모) 입력 -->
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-500 mb-1">내용</label>
+                        <input type="text" id="entry-title" required placeholder="예: 점심 식사, 월급, 카페 등"
+                            class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition">
+                    </div>
+
+                    <!-- 날짜 선택 -->
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-500 mb-1">날짜</label>
+                        <input type="date" id="entry-date" required
+                            class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+
+                    <!-- 저장 버튼 -->
+                    <button type="submit" id="submit-btn" class="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md transition mt-2 flex justify-center items-center space-x-2">
+                        <span>저장하기</span>
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- 삭제 확인 커스텀 모달 (alert/confirm 대체) -->
+        <div id="delete-modal" class="fixed inset-0 bg-black/50 z-40 hidden flex items-center justify-center p-4">
+            <div class="bg-white w-full max-w-xs rounded-2xl p-6 text-center shadow-xl">
+                <div class="w-12 h-12 rounded-full bg-rose-100 text-rose-500 flex items-center justify-center mx-auto mb-3 text-xl">
+                    <i class="fa-solid fa-trash-can"></i>
+                </div>
+                <h4 class="font-bold text-gray-800 text-base mb-1">내역을 삭제할까요?</h4>
+                <p class="text-xs text-gray-500 mb-5">삭제된 내역은 실시간으로 모든 기기에서 지워집니다.</p>
+                <div class="grid grid-cols-2 gap-2">
+                    <button onclick="closeDeleteModal()" class="py-2.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-semibold hover:bg-gray-200">취소</button>
+                    <button id="confirm-delete-btn" class="py-2.5 rounded-xl bg-rose-500 text-white text-sm font-semibold hover:bg-rose-600">삭제</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 토스트 알림 메시지 박스 -->
+        <div id="toast" class="fixed top-5 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-xs font-medium px-4 py-2.5 rounded-full shadow-lg opacity-0 pointer-events-none transition-opacity duration-300 z-50 flex items-center space-x-2">
+            <i class="fa-solid fa-circle-check text-emerald-400"></i>
+            <span id="toast-message">알림 메시지</span>
+        </div>
+
+    </div>
+
+    <!-- Firebase SDK 및 앱 로직 -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // 환경 변수 설정
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-ledger-app';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+
+        // 전역 상태 관리
+        let db = null;
+        let auth = null;
+        let currentUser = null;
+        let transactions = [];
+        let currentFilter = 'all';
+        let deleteTargetId = null;
+
+        // 카테고리 메타데이터 (아이콘 및 색상)
+        const categoryMeta = {
+            expense: [
+                { id: 'food', name: '식비/카페', icon: 'fa-utensils', color: 'bg-orange-100 text-orange-600' },
+                { id: 'maintenance', name: '관리비/공과금', icon: 'fa-building', color: 'bg-purple-100 text-purple-600' },
+                { id: 'telecom', name: '통신비', icon: 'fa-mobile-screen-button', color: 'bg-sky-100 text-sky-600' },
+                { id: 'insurance', name: '보험료', icon: 'fa-shield-halved', color: 'bg-teal-100 text-teal-600' },
+                { id: 'loan', name: '대출금', icon: 'fa-landmark', color: 'bg-slate-100 text-slate-600' },
+                { id: 'academy', name: '학원비/교육', icon: 'fa-graduation-cap', color: 'bg-amber-100 text-amber-600' },
+                { id: 'medical', name: '병원비/약국', icon: 'fa-stethoscope', color: 'bg-rose-100 text-rose-600' },
+                { id: 'fuel', name: '주유비', icon: 'fa-gas-pump', color: 'bg-cyan-100 text-cyan-600' },
+                { id: 'transport', name: '대중교통/차량', icon: 'fa-bus', color: 'bg-blue-100 text-blue-600' },
+                { id: 'family', name: '가족모임/경조사', icon: 'fa-people-roof', color: 'bg-emerald-100 text-emerald-600' },
+                { id: 'shopping', name: '쇼핑/생활', icon: 'fa-bag-shopping', color: 'bg-pink-100 text-pink-600' },
+                { id: 'leisure', name: '문화/여가', icon: 'fa-film', color: 'bg-indigo-100 text-indigo-600' },
+                { id: 'etc_exp', name: '기타 지출', icon: 'fa-ellipsis', color: 'bg-gray-100 text-gray-600' }
+            ],
+            income: [
+                { id: 'salary', name: '급여/월급', icon: 'fa-briefcase', color: 'bg-emerald-100 text-emerald-600' },
+                { id: 'allowance', name: '용돈/부수입', icon: 'fa-coins', color: 'bg-teal-100 text-teal-600' },
+                { id: 'invest', name: '금융/투자', icon: 'fa-chart-line', color: 'bg-cyan-100 text-cyan-600' },
+                { id: 'etc_inc', name: '기타 수입', icon: 'fa-plus', color: 'bg-gray-100 text-gray-600' }
+            ]
+        };
+
+        // 초기화 실행
+        async function initApp() {
+            // 오늘 날짜 기본 세팅
+            document.getElementById('entry-date').valueAsDate = new Date();
+            updateCategoryOptions('expense');
+
+            if (!firebaseConfig) {
+                updateSyncStatus('error', '설정 오류');
+                showToast('데이터베이스 설정을 불러올 수 없습니다.');
+                return;
+            }
+
+            try {
+                const app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+
+                // 인증 처리 (RULE 3 준수: 쿼리 전 인증 완료)
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        currentUser = user;
+                        updateSyncStatus('connected', '실시간 동기화 중');
+                        subscribeToTransactions(user.uid);
+                    } else {
+                        currentUser = null;
+                        updateSyncStatus('disconnected', '연결 끊김');
+                    }
+                });
+            } catch (error) {
+                console.error("초기화 오류:", error);
+                updateSyncStatus('error', '연결 실패');
+                showToast('서버 연결 중 오류가 발생했습니다.');
+            }
+        }
+
+        // 실시간 데이터 구독 (Firestore onSnapshot)
+        function subscribeToTransactions(userId) {
+            if (!db || !userId) return;
+
+            // RULE 1 준수: /artifacts/{appId}/users/{userId}/{collectionName}
+            const colRef = collection(db, 'artifacts', appId, 'users', userId, 'transactions');
+
+            // RULE 2 준수: 복합 쿼리 없이 전체 조회 후 메모리 내 정렬
+            onSnapshot(colRef, (snapshot) => {
+                const loaded = [];
+                snapshot.forEach((docSnap) => {
+                    loaded.push({ id: docSnap.id, ...docSnap.data() });
+                });
+
+                // 날짜 내림차순, 생성시간 내림차순 정렬
+                loaded.sort((a, b) => {
+                    if (a.date !== b.date) {
+                        return b.date.localeCompare(a.date);
+                    }
+                    const timeA = a.createdAt?.seconds || 0;
+                    const timeB = b.createdAt?.seconds || 0;
+                    return timeB - timeA;
+                });
+
+                transactions = loaded;
+                renderDashboard();
+                renderList();
+            }, (error) => {
+                console.error("데이터 수신 오류:", error);
+                updateSyncStatus('error', '동기화 오류');
+                showToast('데이터를 불러오는 중 문제가 발생했습니다.');
+            });
+        }
+
+        // 거래 내역 추가 핸들러
+        window.handleAddTransaction = async function(e) {
+            e.preventDefault();
+            if (!currentUser) {
+                showToast('로그인 상태를 확인 중입니다. 잠시 후 다시 시도해주세요.');
+                return;
+            }
+
+            const submitBtn = document.getElementById('submit-btn');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i><span>저장 중...</span>';
+
+            const type = document.getElementById('entry-type').value;
+            const amount = parseInt(document.getElementById('entry-amount').value, 10);
+            const category = document.getElementById('entry-category').value;
+            const title = document.getElementById('entry-title').value.trim();
+            const date = document.getElementById('entry-date').value;
+
+            try {
+                const colRef = collection(db, 'artifacts', appId, 'users', currentUser.uid, 'transactions');
+                await addDoc(colRef, {
+                    type,
+                    amount,
+                    category,
+                    title,
+                    date,
+                    createdAt: serverTimestamp()
+                });
+
+                closeModal();
+                document.getElementById('transaction-form').reset();
+                document.getElementById('entry-date').valueAsDate = new Date();
+                setFormType('expense');
+                showToast('내역이 실시간으로 저장되었습니다.');
+            } catch (error) {
+                console.error("저장 오류:", error);
+                showToast('저장에 실패했습니다. 다시 시도해주세요.');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<span>저장하기</span>';
+            }
+        };
+
+        // 삭제 확인 모달 열기
+        window.promptDelete = function(id) {
+            deleteTargetId = id;
+            document.getElementById('delete-modal').classList.remove('hidden');
+        };
+
+        // 삭제 확인 모달 닫기
+        window.closeDeleteModal = function() {
+            deleteTargetId = null;
+            document.getElementById('delete-modal').classList.add('hidden');
+        };
+
+        // 실제 삭제 실행
+        document.getElementById('confirm-delete-btn').addEventListener('click', async () => {
+            if (!currentUser || !deleteTargetId) return;
+            const idToDelete = deleteTargetId;
+            closeDeleteModal();
+
+            try {
+                const docRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'transactions', idToDelete);
+                await deleteDoc(docRef);
+                showToast('내역이 삭제되었습니다.');
+            } catch (error) {
+                console.error("삭제 오류:", error);
+                showToast('삭제 중 오류가 발생했습니다.');
+            }
+        });
+
+        // 상단 요약 대시보드 렌더링
+        function renderDashboard() {
+            let income = 0;
+            let expense = 0;
+
+            transactions.forEach(item => {
+                if (item.type === 'income') income += item.amount;
+                else if (item.type === 'expense') expense += item.amount;
+            });
+
+            const balance = income - expense;
+
+            document.getElementById('total-balance').textContent = formatCurrency(balance);
+            document.getElementById('total-income').textContent = `+${formatCurrency(income)}`;
+            document.getElementById('total-expense').textContent = `-${formatCurrency(expense)}`;
+        }
+
+        // 거래 내역 리스트 렌더링
+        function renderList() {
+            const listEl = document.getElementById('transaction-list');
+            const filtered = transactions.filter(item => {
+                if (currentFilter === 'all') return true;
+                return item.type === currentFilter;
+            });
+
+            if (filtered.length === 0) {
+                listEl.innerHTML = `
+                    <div class="flex flex-col items-center justify-center py-16 text-center text-gray-400">
+                        <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-3 text-2xl text-gray-300">
+                            <i class="fa-solid fa-receipt"></i>
+                        </div>
+                        <p class="text-sm font-medium text-gray-500">표시할 거래 내역이 없습니다.</p>
+                        <p class="text-xs mt-1">우측 하단의 + 버튼을 눌러 내역을 추가해보세요!</p>
+                    </div>
+                `;
+                return;
+            }
+
+            listEl.innerHTML = filtered.map(item => {
+                const isIncome = item.type === 'income';
+                const metaList = isIncome ? categoryMeta.income : categoryMeta.expense;
+                const meta = metaList.find(m => m.id === item.category) || metaList[metaList.length - 1];
+                const amountClass = isIncome ? 'text-emerald-600' : 'text-gray-800';
+                const amountPrefix = isIncome ? '+' : '-';
+
+                return `
+                    <div class="bg-white border border-gray-100 rounded-2xl p-3.5 shadow-sm flex items-center justify-between hover:border-indigo-100 transition group">
+                        <div class="flex items-center space-x-3.5 overflow-hidden">
+                            <div class="w-11 h-11 rounded-xl ${meta.color} flex items-center justify-center text-lg shrink-0">
+                                <i class="fa-solid ${meta.icon}"></i>
+                            </div>
+                            <div class="overflow-hidden">
+                                <p class="font-bold text-gray-800 text-sm truncate">${escapeHtml(item.title)}</p>
+                                <div class="flex items-center space-x-2 text-xs text-gray-400 mt-0.5">
+                                    <span>${meta.name}</span>
+                                    <span>•</span>
+                                    <span>${item.date}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flex items-center space-x-2.5 shrink-0 ml-2">
+                            <span class="font-bold text-sm ${amountClass}">${amountPrefix}${formatCurrency(item.amount)}</span>
+                            <button onclick="promptDelete('${item.id}')" aria-label="삭제" class="w-7 h-7 rounded-lg text-gray-300 hover:text-rose-500 hover:bg-rose-50 flex items-center justify-center transition">
+                                <i class="fa-solid fa-trash-can text-xs"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // 필터 변경
+        window.setFilter = function(filter) {
+            currentFilter = filter;
+            ['all', 'income', 'expense'].forEach(f => {
+                const btn = document.getElementById(`filter-${f}`);
+                if (f === filter) {
+                    btn.className = 'px-3 py-1.5 rounded-lg bg-white text-indigo-600 shadow-sm transition font-bold';
+                } else {
+                    btn.className = 'px-3 py-1.5 rounded-lg text-gray-500 hover:text-gray-700 transition';
+                }
+            });
+            renderList();
+        };
+
+        // 모달 제어
+        window.openModal = function() {
+            document.getElementById('add-modal').classList.remove('hidden');
+            setTimeout(() => document.getElementById('entry-amount').focus(), 100);
+        };
+
+        window.closeModal = function() {
+            document.getElementById('add-modal').classList.add('hidden');
+        };
+
+        // 폼 타입(수입/지출) 전환
+        window.setFormType = function(type) {
+            document.getElementById('entry-type').value = type;
+            const expBtn = document.getElementById('type-expense-btn');
+            const incBtn = document.getElementById('type-income-btn');
+
+            if (type === 'expense') {
+                expBtn.className = 'py-2.5 rounded-lg text-sm font-bold bg-rose-500 text-white shadow-sm transition';
+                incBtn.className = 'py-2.5 rounded-lg text-sm font-bold text-gray-600 transition';
+            } else {
+                incBtn.className = 'py-2.5 rounded-lg text-sm font-bold bg-emerald-500 text-white shadow-sm transition';
+                expBtn.className = 'py-2.5 rounded-lg text-sm font-bold text-gray-600 transition';
+            }
+            updateCategoryOptions(type);
+        };
+
+        // 카테고리 드롭다운 업데이트
+        function updateCategoryOptions(type) {
+            const select = document.getElementById('entry-category');
+            const options = categoryMeta[type];
+            select.innerHTML = options.map(opt => `<option value="${opt.id}">${opt.name}</option>`).join('');
+        }
+
+        // 동기화 상태 UI 업데이트
+        function updateSyncStatus(status, text) {
+            const dot = document.getElementById('sync-dot');
+            const label = document.getElementById('sync-text');
+            label.textContent = text;
+
+            if (status === 'connected') {
+                dot.className = 'w-2 h-2 rounded-full bg-emerald-400';
+            } else if (status === 'error') {
+                dot.className = 'w-2 h-2 rounded-full bg-rose-400';
+            } else {
+                dot.className = 'w-2 h-2 rounded-full bg-yellow-400 animate-pulse';
+            }
+        }
+
+        // 토스트 알림 표시
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toast-message').textContent = msg;
+            toast.classList.remove('opacity-0');
+            setTimeout(() => {
+                toast.classList.add('opacity-0');
+            }, 2500);
+        }
+
+        // 유틸리티: 통화 포맷팅
+        function formatCurrency(num) {
+            return num.toLocaleString('ko-KR') + '원';
+        }
+
+        // 유틸리티: XSS 방지 이스케이프
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // 앱 시작
+        window.addEventListener('DOMContentLoaded', initApp);
+    </script>
+</body>
+</html>

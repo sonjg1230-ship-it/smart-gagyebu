@@ -1,0 +1,99 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Safety Net: Default deny all reads and writes
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Reusable Hardened Primitives
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isVerified() && request.auth.uid == userId;
+    }
+
+    // Validation Blueprint for Transaction
+    function isValidTransaction(data, userId) {
+      return data.keys().hasAll(['userId', 'type', 'amount', 'category', 'title', 'date', 'createdAt'])
+        && data.keys().hasOnly(['userId', 'type', 'amount', 'category', 'title', 'date', 'createdAt'])
+        && data.userId is string
+        && isValidId(data.userId)
+        && data.userId == request.auth.uid
+        && data.userId == userId
+        && data.type is string
+        && data.type in ['income', 'expense']
+        && data.amount is int
+        && data.amount >= 1
+        && data.amount <= 1000000000000
+        && data.category is string
+        && (
+          (data.type == 'expense' && data.category in [
+            'food', 'maintenance', 'telecom', 'insurance', 'loan',
+            'academy', 'medical', 'fuel', 'transport', 'family',
+            'shopping', 'leisure', 'etc_exp'
+          ]) ||
+          (data.type == 'income' && data.category in [
+            'salary', 'allowance', 'invest', 'etc_inc'
+          ])
+        )
+        && data.title is string
+        && data.title.size() >= 1
+        && data.title.size() <= 100
+        && data.date is string
+        && data.date.size() == 10
+        && data.date.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && data.createdAt is timestamp;
+    }
+
+    match /users/{userId}/transactions/{transactionId} {
+      allow get: if isOwner(userId)
+        && isValidId(userId)
+        && isValidId(transactionId);
+
+      allow list: if isOwner(userId)
+        && isValidId(userId)
+        && resource.data.userId == request.auth.uid;
+
+      allow create: if isOwner(userId)
+        && isValidId(userId)
+        && isValidId(transactionId)
+        && isValidTransaction(incoming(), userId)
+        && incoming().createdAt == request.time;
+
+      allow update: if isOwner(userId)
+        && isValidId(userId)
+        && isValidId(transactionId)
+        && isValidTransaction(incoming(), userId)
+        && incoming().userId == existing().userId
+        && incoming().createdAt == existing().createdAt
+        && (
+          // Action: Edit transaction details
+          incoming().diff(existing()).affectedKeys().hasOnly(['type', 'amount', 'category', 'title', 'date'])
+        );
+
+      allow delete: if isOwner(userId)
+        && isValidId(userId)
+        && isValidId(transactionId);
+    }
+  }
+}
