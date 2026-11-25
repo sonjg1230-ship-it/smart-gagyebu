@@ -863,6 +863,22 @@ export default function App() {
                     </button>
                   )}
                 </div>
+
+                {searchQuery && (
+                  <div className="flex items-center justify-between bg-indigo-50 border border-indigo-200/80 rounded-xl px-3 py-2 text-xs text-indigo-800">
+                    <span className="font-semibold flex items-center gap-1.5 min-w-0 truncate">
+                      <Building2 className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                      <span className="truncate">"{searchQuery}" 통장 내역 필터링 중 ({filteredTransactions.length}건)</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      className="text-indigo-600 hover:text-indigo-900 font-bold shrink-0 cursor-pointer ml-2"
+                    >
+                      필터 해제
+                    </button>
+                  </div>
+                )}
               </div>
 
               {filteredTransactions.length === 0 ? (
