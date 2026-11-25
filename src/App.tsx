@@ -3,6 +3,7 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   BarChart3,
+  Building2,
   CalendarDays,
   FileSpreadsheet,
   FileText,
@@ -15,6 +16,7 @@ import {
   Pin,
   Plus,
   Receipt,
+  RefreshCw,
   Search,
   Trash2,
   Upload,
@@ -26,6 +28,7 @@ import { CategoryIcon } from './components/CategoryIcon';
 import { DeleteModal } from './components/DeleteModal';
 import { ImportModal } from './components/ImportModal';
 import { MonthlyStatsView } from './components/MonthlyStatsView';
+import { RecurringRulesModal } from './components/RecurringRulesModal';
 import { Toast, type ToastState } from './components/Toast';
 import { TransactionModal } from './components/TransactionModal';
 import {
@@ -35,12 +38,22 @@ import {
   type Transaction,
   type TransactionDraft,
 } from './types/ledger';
+import type { RecurringRule } from './types/recurring';
 import { exportToExcel, exportToPdf } from './utils/exportLedger';
 import {
   parseExcelFile,
   parseImageFile,
   type ImportCandidate,
 } from './utils/importLedger';
+import {
+  checkAndApplyRecurringRules,
+  forceApplyRecurringRulesForCurrentMonth,
+} from './utils/recurringScheduler';
+import {
+  loadRecurringRules,
+  saveRecurringRules,
+  generateRecurringRuleId,
+} from './utils/recurringStorage';
 import {
   generateTransactionId,
   loadTransactions,
@@ -52,9 +65,69 @@ type WorkspaceView = 'ledger' | 'stats' | 'calendar';
 
 export default function App() {
   const [transactions, setTransactions] = useState<Transaction[]>(() => loadTransactions());
+  const [recurringRules, setRecurringRules] = useState<RecurringRule[]>(() => loadRecurringRules());
+  const [isRecurringModalOpen, setIsRecurringModalOpen] = useState(false);
   const [activeView, setActiveView] = useState<WorkspaceView>('ledger');
   const [filter, setFilter] = useState<FilterType>('all');
   const [searchQuery, setSearchQuery] = useState('');
+
+  useEffect(() => {
+    if (recurringRules.length === 0) return;
+    checkAndApplyRecurringRules(
+      recurringRules,
+      transactions,
+      (newItems, updatedRules) => {
+        if (newItems.length > 0) {
+          persistList([...newItems, ...transactions]);
+          showToast(`반복 스케줄러: ${newItems.length}건의 고정 내역이 자동 생성되었습니다.`);
+        }
+        setRecurringRules(updatedRules);
+        saveRecurringRules(updatedRules);
+      }
+    );
+  }, []);
+
+  const handleSaveRecurringRule = (draft: Omit<RecurringRule, 'id' | 'lastGeneratedMonth'>) => {
+    const newRule: RecurringRule = {
+      ...draft,
+      id: generateRecurringRuleId(),
+    };
+    const nextRules = [...recurringRules, newRule];
+    setRecurringRules(nextRules);
+    saveRecurringRules(nextRules);
+    showToast('반복 규칙이 추가되었습니다.');
+  };
+
+  const handleDeleteRecurringRule = (id: string) => {
+    const nextRules = recurringRules.filter((r) => r.id !== id);
+    setRecurringRules(nextRules);
+    saveRecurringRules(nextRules);
+    showToast('반복 규칙이 삭제되었습니다.');
+  };
+
+  const handleToggleRecurringRule = (id: string) => {
+    const nextRules = recurringRules.map((r) => (r.id === id ? { ...r, isActive: !r.isActive } : r));
+    setRecurringRules(nextRules);
+    saveRecurringRules(nextRules);
+    showToast('반복 규칙 상태가 변경되었습니다.');
+  };
+
+  const handleRunManualScheduler = () => {
+    forceApplyRecurringRulesForCurrentMonth(
+      recurringRules,
+      transactions,
+      (newItems, updatedRules) => {
+        if (newItems.length > 0) {
+          persistList([...newItems, ...transactions]);
+          showToast(`${newItems.length}건의 반복 고정 내역이 생성되었습니다.`);
+        } else {
+          showToast('이번 달에 생성할 새로운 반복 내역이 없습니다.');
+        }
+        setRecurringRules(updatedRules);
+        saveRecurringRules(updatedRules);
+      }
+    );
+  };
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
@@ -287,6 +360,31 @@ export default function App() {
       .slice(0, 5);
   }, [transactions, totalExpense]);
 
+  const bankSummary = useMemo(() => {
+    const map = new Map<string, { income: number; expense: number; count: number }>();
+    for (const item of transactions) {
+      const bank = item.bankName?.trim() || '미분류 통장';
+      const current = map.get(bank) || { income: 0, expense: 0, count: 0 };
+      if (item.type === 'income') {
+        current.income += item.amount;
+      } else {
+        current.expense += item.amount;
+      }
+      current.count += 1;
+      map.set(bank, current);
+    }
+
+    return Array.from(map.entries())
+      .map(([bankName, data]) => ({
+        bankName,
+        income: data.income,
+        expense: data.expense,
+        net: data.income - data.expense,
+        count: data.count,
+      }))
+      .sort((a, b) => b.net - a.net);
+  }, [transactions]);
+
   const handleExportExcel = () => {
     if (filteredTransactions.length === 0) {
       showToast('내보낼 거래 내역이 없습니다.', 'error');
@@ -439,6 +537,15 @@ export default function App() {
               <span>{isParsingExcel ? '엑셀 읽는 중...' : '엑셀로 넣기'}</span>
             </button>
 
+            <button
+              type="button"
+              onClick={() => setIsRecurringModalOpen(true)}
+              className="min-h-[40px] px-3 py-2 rounded-xl border border-indigo-200 bg-indigo-50/60 hover:bg-indigo-100 text-indigo-700 text-xs sm:text-sm font-semibold inline-flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              <RefreshCw className="w-4 h-4 text-indigo-600 shrink-0" />
+              <span>반복 스케줄러</span>
+            </button>
+
             {activeView !== 'ledger' && (
               <button
                 type="button"
@@ -531,6 +638,50 @@ export default function App() {
                             className={`h-full rounded-full ${meta.barColorClass}`}
                             style={{ width: `${Math.max(percent, 4)}%` }}
                           />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {bankSummary.length > 0 && (
+                <section className="bg-white border border-slate-200/80 rounded-2xl p-5">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-1.5">
+                      <Building2 className="w-4 h-4 text-indigo-600" />
+                      <h2 className="text-sm font-bold text-slate-900">은행별 통장 요약</h2>
+                    </div>
+                    <span className="text-xs text-slate-500 tabular-nums">
+                      총 {bankSummary.length}개 통장
+                    </span>
+                  </div>
+                  <div className="space-y-3">
+                    {bankSummary.map(({ bankName, income, expense, net, count }) => (
+                      <div key={bankName} className="bg-slate-50 border border-slate-100 rounded-xl p-3">
+                        <div className="flex items-center justify-between text-xs mb-1.5">
+                          <span className="font-bold text-slate-900 truncate">{bankName}</span>
+                          <span className="text-slate-500 tabular-nums">{count}건</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-1 text-[11px] pt-1.5 border-t border-slate-200/60">
+                          <div>
+                            <span className="text-slate-400 block text-[10px]">수입</span>
+                            <span className="font-semibold text-emerald-600 tabular-nums">
+                              +{formatCurrency(income)}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 block text-[10px]">지출</span>
+                            <span className="font-semibold text-rose-600 tabular-nums">
+                              -{formatCurrency(expense)}
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-slate-400 block text-[10px]">합계</span>
+                            <span className={`font-bold tabular-nums ${net >= 0 ? 'text-indigo-600' : 'text-rose-600'}`}>
+                              {net > 0 ? '+' : ''}{formatCurrency(net)}
+                            </span>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -807,6 +958,18 @@ export default function App() {
           setImportModalState((prev) => ({ ...prev, isOpen: false, candidates: [] }))
         }
         onConfirm={handleConfirmImport}
+      />
+
+      {/* Recurring Rules Scheduler Modal */}
+      <RecurringRulesModal
+        isOpen={isRecurringModalOpen}
+        rules={recurringRules}
+        isSubmitting={false}
+        onClose={() => setIsRecurringModalOpen(false)}
+        onSaveRule={handleSaveRecurringRule}
+        onDeleteRule={handleDeleteRecurringRule}
+        onToggleRule={handleToggleRecurringRule}
+        onRunScheduler={handleRunManualScheduler}
       />
     </div>
   );

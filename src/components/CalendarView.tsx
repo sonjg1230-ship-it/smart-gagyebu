@@ -202,6 +202,28 @@ export function CalendarView({
           </div>
         </div>
 
+        {/* Selected Month Total Summary Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5 bg-indigo-600 text-white rounded-2xl p-5 shadow-sm">
+          <div>
+            <p className="text-indigo-100 text-xs font-medium mb-1">총 수입</p>
+            <p className="text-xl sm:text-2xl font-bold tabular-nums">
+              +{formatCurrency(monthStats.totalIncome)}
+            </p>
+          </div>
+          <div>
+            <p className="text-indigo-100 text-xs font-medium mb-1">총 지출</p>
+            <p className="text-xl sm:text-2xl font-bold tabular-nums">
+              -{formatCurrency(monthStats.totalExpense)}
+            </p>
+          </div>
+          <div>
+            <p className="text-indigo-100 text-xs font-medium mb-1">월 잔액 (순 합계)</p>
+            <p className="text-xl sm:text-2xl font-bold tabular-nums">
+              {monthStats.net > 0 ? '+' : ''}{formatCurrency(monthStats.net)}
+            </p>
+          </div>
+        </div>
+
         {/* Monthly Fixed vs Variable Summary Card */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 bg-slate-50 border border-slate-200/80 rounded-2xl p-4">
           {/* Fixed & Variable Income */}
