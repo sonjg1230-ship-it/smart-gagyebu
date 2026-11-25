@@ -12,6 +12,7 @@ import {
   List,
   Loader2,
   Lock,
+  MessageSquare,
   Palette,
   Pencil,
   Pin,
@@ -30,6 +31,7 @@ import { DeleteModal } from './components/DeleteModal';
 import { ImportModal } from './components/ImportModal';
 import { MonthlyStatsView } from './components/MonthlyStatsView';
 import { RecurringRulesModal } from './components/RecurringRulesModal';
+import { SmsParserModal } from './components/SmsParserModal';
 import { Toast, type ToastState } from './components/Toast';
 import { TransactionModal } from './components/TransactionModal';
 import {
@@ -154,6 +156,7 @@ export default function App() {
 
   const [isParsingImage, setIsParsingImage] = useState(false);
   const [isParsingExcel, setIsParsingExcel] = useState(false);
+  const [isSmsModalOpen, setIsSmsModalOpen] = useState(false);
   const [importModalState, setImportModalState] = useState<{
     isOpen: boolean;
     sourceType: 'image' | 'excel';
@@ -587,6 +590,15 @@ export default function App() {
                 <Upload className="w-4 h-4 text-emerald-600 shrink-0" />
               )}
               <span>{isParsingExcel ? '엑셀 읽는 중...' : '엑셀로 넣기'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsSmsModalOpen(true)}
+              className="min-h-[40px] px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-sky-50 hover:border-sky-200 hover:text-sky-700 text-slate-700 text-xs sm:text-sm font-semibold inline-flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              <MessageSquare className="w-4 h-4 text-sky-600 shrink-0" />
+              <span>결제 문자 입력</span>
             </button>
 
             <button
@@ -1064,6 +1076,13 @@ export default function App() {
         onDeleteRule={handleDeleteRecurringRule}
         onToggleRule={handleToggleRecurringRule}
         onRunScheduler={handleRunManualScheduler}
+      />
+
+      {/* SMS Payment Notification Parser Modal */}
+      <SmsParserModal
+        isOpen={isSmsModalOpen}
+        onClose={() => setIsSmsModalOpen(false)}
+        onConfirmImport={handleConfirmImport}
       />
     </div>
   );
