@@ -709,34 +709,60 @@ export default function App() {
                     </span>
                   </div>
                   <div className="space-y-3">
-                    {bankSummary.map(({ bankName, income, expense, net, count }) => (
-                      <div key={bankName} className="bg-slate-50 border border-slate-100 rounded-xl p-3">
-                        <div className="flex items-center justify-between text-xs mb-1.5">
-                          <span className="font-bold text-slate-900 truncate">{bankName}</span>
-                          <span className="text-slate-500 tabular-nums">{count}건</span>
+                    {bankSummary.map(({ bankName, income, expense, net, count }) => {
+                      const isSelected = searchQuery.trim().toLowerCase() === bankName.toLowerCase();
+                      return (
+                        <div
+                          key={bankName}
+                          onClick={() => {
+                            if (isSelected) {
+                              setSearchQuery('');
+                            } else {
+                              setSearchQuery(bankName);
+                              setActiveView('ledger');
+                            }
+                          }}
+                          className={`border rounded-xl p-3 cursor-pointer transition-all ${
+                            isSelected
+                              ? 'bg-indigo-50/80 border-indigo-300 shadow-xs ring-1 ring-indigo-300'
+                              : 'bg-slate-50 border-slate-100 hover:bg-indigo-50/40 hover:border-indigo-200'
+                          }`}
+                          title="클릭하여 해당 통장 내역만 모아보기"
+                        >
+                          <div className="flex items-center justify-between text-xs mb-1.5">
+                            <span className="font-bold text-slate-900 truncate flex items-center gap-1.5">
+                              <span>{bankName}</span>
+                              {isSelected && (
+                                <span className="px-1 py-0.5 rounded bg-indigo-600 text-white text-[9px] font-semibold">
+                                  필터링 중
+                                </span>
+                              )}
+                            </span>
+                            <span className="text-slate-500 tabular-nums">{count}건</span>
+                          </div>
+                          <div className="grid grid-cols-3 gap-1 text-[11px] pt-1.5 border-t border-slate-200/60">
+                            <div>
+                              <span className="text-slate-400 block text-[10px]">수입</span>
+                              <span className="font-semibold text-emerald-600 tabular-nums">
+                                +{formatCurrency(income)}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-slate-400 block text-[10px]">지출</span>
+                              <span className="font-semibold text-rose-600 tabular-nums">
+                                -{formatCurrency(expense)}
+                              </span>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-slate-400 block text-[10px]">합계</span>
+                              <span className={`font-bold tabular-nums ${net >= 0 ? 'text-indigo-600' : 'text-rose-600'}`}>
+                                {net > 0 ? '+' : ''}{formatCurrency(net)}
+                              </span>
+                            </div>
+                          </div>
                         </div>
-                        <div className="grid grid-cols-3 gap-1 text-[11px] pt-1.5 border-t border-slate-200/60">
-                          <div>
-                            <span className="text-slate-400 block text-[10px]">수입</span>
-                            <span className="font-semibold text-emerald-600 tabular-nums">
-                              +{formatCurrency(income)}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-slate-400 block text-[10px]">지출</span>
-                            <span className="font-semibold text-rose-600 tabular-nums">
-                              -{formatCurrency(expense)}
-                            </span>
-                          </div>
-                          <div className="text-right">
-                            <span className="text-slate-400 block text-[10px]">합계</span>
-                            <span className={`font-bold tabular-nums ${net >= 0 ? 'text-indigo-600' : 'text-rose-600'}`}>
-                              {net > 0 ? '+' : ''}{formatCurrency(net)}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </section>
               )}
