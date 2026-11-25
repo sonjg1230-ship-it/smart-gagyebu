@@ -12,6 +12,7 @@ import {
   List,
   Loader2,
   Lock,
+  Palette,
   Pencil,
   Pin,
   Plus,
@@ -39,6 +40,7 @@ import {
   type TransactionDraft,
 } from './types/ledger';
 import type { RecurringRule } from './types/recurring';
+import { THEMES, type ThemeId } from './types/theme';
 import { exportToExcel, exportToPdf } from './utils/exportLedger';
 import {
   parseExcelFile,
@@ -65,11 +67,23 @@ type WorkspaceView = 'ledger' | 'stats' | 'calendar';
 
 export default function App() {
   const [transactions, setTransactions] = useState<Transaction[]>(() => loadTransactions());
+  const [currentThemeId, setCurrentThemeId] = useState<ThemeId>(() => {
+    const saved = window.localStorage.getItem('smart_ledger_theme_v1');
+    if (saved && saved in THEMES) return saved as ThemeId;
+    return 'indigo';
+  });
   const [recurringRules, setRecurringRules] = useState<RecurringRule[]>(() => loadRecurringRules());
   const [isRecurringModalOpen, setIsRecurringModalOpen] = useState(false);
   const [activeView, setActiveView] = useState<WorkspaceView>('ledger');
   const [filter, setFilter] = useState<FilterType>('all');
   const [searchQuery, setSearchQuery] = useState('');
+
+  const handleSelectTheme = (themeId: ThemeId) => {
+    setCurrentThemeId(themeId);
+    window.localStorage.setItem('smart_ledger_theme_v1', themeId);
+  };
+
+  const currentTheme = THEMES[currentThemeId] || THEMES.indigo;
 
   useEffect(() => {
     if (recurringRules.length === 0) return;
@@ -418,24 +432,62 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
+    <div
+      className={`min-h-screen flex flex-col transition-colors ${
+        currentTheme.isDark ? 'dark bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'
+      }`}
+    >
       <Toast toast={toast} />
 
       {/* Top Navigation Bar */}
-      <header className="sticky top-0 z-20 bg-white/90 backdrop-blur-md border-b border-slate-200/80">
+      <header className="sticky top-0 z-20 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-4">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center shrink-0">
+            <div
+              className={`w-8 h-8 rounded-lg ${currentTheme.primaryBg} text-white flex items-center justify-center shrink-0 shadow-sm`}
+            >
               <Wallet className="w-4 h-4" />
             </div>
-            <span className="font-bold text-base tracking-tight text-slate-900 whitespace-nowrap truncate">
+            <span className="font-bold text-base tracking-tight text-slate-900 dark:text-slate-100 whitespace-nowrap truncate">
               스마트 가계부
             </span>
           </div>
 
-          <div className="flex items-center gap-1.5 text-xs font-medium text-slate-600 whitespace-nowrap shrink-0">
-            <HardDrive className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-            <span>내 브라우저 전용</span>
+          <div className="flex items-center gap-3 shrink-0">
+            {/* Theme Selector Dropdown */}
+            <div className="relative group">
+              <button
+                type="button"
+                aria-label="테마 변경"
+                className="min-h-[38px] px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0 shadow-xs"
+              >
+                <Palette className={`w-3.5 h-3.5 ${currentTheme.accentText} shrink-0`} />
+                <span>{currentTheme.name}</span>
+              </button>
+
+              <div className="absolute right-0 top-full mt-1 w-44 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl p-1.5 hidden group-hover:block group-focus-within:block z-50">
+                {Object.values(THEMES).map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => handleSelectTheme(t.id)}
+                    className={`w-full text-left px-3 py-2 rounded-xl text-xs font-semibold flex items-center justify-between transition-colors cursor-pointer ${
+                      currentThemeId === t.id
+                        ? 'bg-indigo-50 dark:bg-slate-800 text-indigo-600 dark:text-sky-400'
+                        : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    <span>{t.name}</span>
+                    <span className={`w-3 h-3 rounded-full ${t.dotColor}`} />
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="hidden sm:flex items-center gap-1.5 text-xs font-medium text-slate-500 dark:text-slate-400 whitespace-nowrap">
+              <HardDrive className="w-3.5 h-3.5 shrink-0" />
+              <span>로컬 저장</span>
+            </div>
           </div>
         </div>
       </header>
@@ -575,7 +627,7 @@ export default function App() {
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
             {/* Left Column: Balance Summary + Category Breakdown */}
             <aside className="lg:col-span-5 space-y-5 lg:sticky lg:top-20">
-              <section className="bg-indigo-600 text-white rounded-3xl p-6 shadow-sm">
+              <section className={`${currentTheme.primaryBg} text-white rounded-3xl p-6 shadow-sm`}>
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <p className="text-indigo-100 text-xs font-medium mb-1">현재 총 잔액</p>
