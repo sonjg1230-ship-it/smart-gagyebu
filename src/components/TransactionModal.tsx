@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Loader2, X } from 'lucide-react';
+import { Building2, Loader2, Pin, X } from 'lucide-react';
 import {
   formatCurrency,
   getCategoriesForType,
@@ -14,6 +14,7 @@ import {
 interface TransactionModalProps {
   isOpen: boolean;
   editingTransaction: Transaction | null;
+  defaultDate?: string;
   isSubmitting: boolean;
   onClose: () => void;
   onSubmit: (draft: TransactionDraft, editingId?: string) => Promise<void>;
@@ -22,6 +23,7 @@ interface TransactionModalProps {
 export function TransactionModal({
   isOpen,
   editingTransaction,
+  defaultDate,
   isSubmitting,
   onClose,
   onSubmit,
@@ -30,7 +32,9 @@ export function TransactionModal({
   const [amountInput, setAmountInput] = useState('');
   const [category, setCategory] = useState<CategoryId>('food');
   const [title, setTitle] = useState('');
-  const [date, setDate] = useState(getTodayDateString());
+  const [date, setDate] = useState(defaultDate || getTodayDateString());
+  const [isFixed, setIsFixed] = useState(false);
+  const [bankName, setBankName] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -42,15 +46,19 @@ export function TransactionModal({
       setCategory(editingTransaction.category);
       setTitle(editingTransaction.title);
       setDate(editingTransaction.date);
+      setIsFixed(Boolean(editingTransaction.isFixed));
+      setBankName(editingTransaction.bankName || '');
     } else {
       setType('expense');
       setAmountInput('');
       setCategory('food');
       setTitle('');
-      setDate(getTodayDateString());
+      setDate(defaultDate || getTodayDateString());
+      setIsFixed(false);
+      setBankName('');
     }
     setFormError(null);
-  }, [isOpen, editingTransaction]);
+  }, [isOpen, editingTransaction, defaultDate]);
 
   if (!isOpen) return null;
 
@@ -98,6 +106,8 @@ export function TransactionModal({
         category,
         title: sanitizedTitle,
         date,
+        isFixed,
+        bankName: bankName.trim() ? bankName.trim().slice(0, 50) : undefined,
       },
       editingTransaction?.id
     );
@@ -105,7 +115,7 @@ export function TransactionModal({
 
   return (
     <div
-      className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-30 flex items-end sm:items-center justify-center sm:p-4"
+      className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-40 flex items-end sm:items-center justify-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="transaction-modal-title"
@@ -128,6 +138,7 @@ export function TransactionModal({
         </div>
 
         <form onSubmit={handleFormSubmit} className="space-y-4">
+          {/* Type Toggle: Expense / Income */}
           <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 rounded-xl">
             <button
               type="button"
@@ -153,6 +164,34 @@ export function TransactionModal({
             </button>
           </div>
 
+          {/* Fixed vs Variable Toggle */}
+          <div className="grid grid-cols-2 gap-1.5 p-1 bg-indigo-50/70 border border-indigo-100 rounded-xl">
+            <button
+              type="button"
+              onClick={() => setIsFixed(false)}
+              className={`min-h-[40px] py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer inline-flex items-center justify-center gap-1.5 ${
+                !isFixed
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'text-indigo-900 hover:text-indigo-950'
+              }`}
+            >
+              <span>변동</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsFixed(true)}
+              className={`min-h-[40px] py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer inline-flex items-center justify-center gap-1.5 ${
+                isFixed
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'text-indigo-900 hover:text-indigo-950'
+              }`}
+            >
+              <Pin className="w-3.5 h-3.5 shrink-0" />
+              <span>고정 (월세/월급 등)</span>
+            </button>
+          </div>
+
+          {/* Amount */}
           <div>
             <label htmlFor="entry-amount" className="block text-xs font-semibold text-slate-600 mb-1.5">
               금액 (원)
@@ -183,6 +222,26 @@ export function TransactionModal({
             )}
           </div>
 
+          {/* Bank / Account Name (Especially for fixed income/expense) */}
+          <div>
+            <label htmlFor="entry-bank" className="block text-xs font-semibold text-slate-600 mb-1.5">
+              통장 / 은행명 {isFixed ? <span className="text-indigo-600">(고정 필수)</span> : <span className="text-slate-400">(선택)</span>}
+            </label>
+            <div className="relative">
+              <Building2 className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                id="entry-bank"
+                type="text"
+                maxLength={50}
+                placeholder="예: 국민은행 생활통장, 신한은행 월급통장"
+                value={bankName}
+                onChange={(e) => setBankName(e.target.value)}
+                className="w-full min-h-[44px] pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-colors"
+              />
+            </div>
+          </div>
+
+          {/* Category */}
           <div>
             <label htmlFor="entry-category" className="block text-xs font-semibold text-slate-600 mb-1.5">
               카테고리
@@ -201,6 +260,7 @@ export function TransactionModal({
             </select>
           </div>
 
+          {/* Title / Memo */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label htmlFor="entry-title" className="block text-xs font-semibold text-slate-600">
@@ -215,13 +275,14 @@ export function TransactionModal({
               type="text"
               required
               maxLength={VALIDATION_LIMITS.TITLE_MAX_LENGTH}
-              placeholder="예: 점심 식사, 월급, 카페 등"
+              placeholder="예: 점심 식사, 1월 급여, 관리비 자동이체 등"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               className="w-full min-h-[44px] px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-colors"
             />
           </div>
 
+          {/* Date */}
           <div>
             <label htmlFor="entry-date" className="block text-xs font-semibold text-slate-600 mb-1.5">
               날짜

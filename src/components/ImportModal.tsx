@@ -63,12 +63,14 @@ export function ImportModal({
   const handleConfirm = () => {
     if (selectedItems.length === 0) return;
     onConfirm(
-      selectedItems.map(({ type, amount, category, title, date }) => ({
+      selectedItems.map(({ type, amount, category, title, date, isFixed, bankName }) => ({
         type,
         amount,
         category,
         title: title.trim().slice(0, VALIDATION_LIMITS.TITLE_MAX_LENGTH),
         date,
+        isFixed,
+        bankName,
       }))
     );
   };

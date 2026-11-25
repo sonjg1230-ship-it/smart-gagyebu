@@ -31,6 +31,8 @@ export function loadTransactions(): Transaction[] {
       const title = typeof record.title === 'string' ? record.title.trim() : '';
       const date = typeof record.date === 'string' ? record.date : '';
       const category = typeof record.category === 'string' ? (record.category as CategoryId) : null;
+      const isFixed = Boolean(record.isFixed);
+      const bankName = typeof record.bankName === 'string' ? record.bankName.trim() : undefined;
 
       if (
         !type ||
@@ -50,6 +52,8 @@ export function loadTransactions(): Transaction[] {
         category,
         title: title.slice(0, VALIDATION_LIMITS.TITLE_MAX_LENGTH),
         date,
+        isFixed,
+        bankName: bankName ? bankName.slice(0, 50) : undefined,
         createdAt: typeof record.createdAt === 'number' ? record.createdAt : Date.now(),
       });
     }

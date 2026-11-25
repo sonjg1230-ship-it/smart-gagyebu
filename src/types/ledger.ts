@@ -74,6 +74,8 @@ export interface Transaction {
   category: CategoryId;
   title: string;
   date: string;
+  isFixed: boolean; // 고정(true) vs 변동(false)
+  bankName?: string; // 통장/은행 이름 (예: 국민은행, 신한은행)
   createdAt: number;
 }
 
@@ -83,6 +85,8 @@ export interface TransactionDraft {
   category: CategoryId;
   title: string;
   date: string;
+  isFixed: boolean;
+  bankName?: string;
 }
 
 export function formatCurrency(amount: number): string {

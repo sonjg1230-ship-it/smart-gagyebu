@@ -215,6 +215,8 @@ export async function parseExcelFile(file: File): Promise<ImportCandidate[]> {
       category,
       title,
       date,
+      isFixed: false,
+      bankName: undefined,
     });
   }
 
@@ -272,5 +274,7 @@ export async function parseImageFile(file: File): Promise<ImportCandidate[]> {
     ...item,
     tempId: createTempId(),
     selected: true,
+    isFixed: Boolean(item.isFixed),
+    bankName: item.bankName,
   }));
 }
