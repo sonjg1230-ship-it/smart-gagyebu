@@ -7,6 +7,7 @@ import {
   CalendarDays,
   FileSpreadsheet,
   FileText,
+  FolderKanban,
   HardDrive,
   ImagePlus,
   List,
@@ -29,6 +30,7 @@ import { CalendarView } from './components/CalendarView';
 import { CategoryIcon } from './components/CategoryIcon';
 import { DeleteModal } from './components/DeleteModal';
 import { ImportModal } from './components/ImportModal';
+import { IntegratedSummaryView } from './components/IntegratedSummaryView';
 import { MonthlyStatsView } from './components/MonthlyStatsView';
 import { RecurringRulesModal } from './components/RecurringRulesModal';
 import { SmsParserModal } from './components/SmsParserModal';
@@ -65,7 +67,7 @@ import {
   sortTransactions,
 } from './utils/storage';
 
-type WorkspaceView = 'ledger' | 'stats' | 'calendar';
+type WorkspaceView = 'ledger' | 'stats' | 'calendar' | 'summary';
 
 export default function App() {
   const [transactions, setTransactions] = useState<Transaction[]>(() => loadTransactions());
@@ -502,7 +504,7 @@ export default function App() {
           <div
             role="tablist"
             aria-label="화면 전환"
-            className="inline-flex items-center gap-1 bg-slate-200/70 p-1 rounded-xl"
+            className="inline-flex items-center gap-1 bg-slate-200/70 dark:bg-slate-800 p-1 rounded-xl max-w-full overflow-x-auto no-scrollbar"
           >
             <button
               type="button"
@@ -545,6 +547,20 @@ export default function App() {
             >
               <BarChart3 className="w-4 h-4 shrink-0" />
               <span>월별 통계</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeView === 'summary'}
+              onClick={() => setActiveView('summary')}
+              className={`min-h-[40px] px-3.5 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-semibold inline-flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                activeView === 'summary'
+                  ? 'bg-white text-indigo-600 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <FolderKanban className="w-4 h-4 shrink-0" />
+              <span>통합 수입·지출</span>
             </button>
           </div>
 
@@ -595,9 +611,9 @@ export default function App() {
             <button
               type="button"
               onClick={() => setIsSmsModalOpen(true)}
-              className="min-h-[40px] px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-sky-50 hover:border-sky-200 hover:text-sky-700 text-slate-700 text-xs sm:text-sm font-semibold inline-flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              className="min-h-[40px] px-3.5 py-2 rounded-xl border border-sky-500 bg-sky-500 hover:bg-sky-600 text-white text-xs sm:text-sm font-semibold inline-flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer shadow-xs"
             >
-              <MessageSquare className="w-4 h-4 text-sky-600 shrink-0" />
+              <MessageSquare className="w-4 h-4 text-white shrink-0" />
               <span>결제 문자 입력</span>
             </button>
 
@@ -634,6 +650,12 @@ export default function App() {
           <MonthlyStatsView
             transactions={transactions}
             onOpenAddModal={() => handleOpenAddModal()}
+          />
+        ) : activeView === 'summary' ? (
+          <IntegratedSummaryView
+            transactions={transactions}
+            onOpenAddModal={() => handleOpenAddModal()}
+            onShowToast={showToast}
           />
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">

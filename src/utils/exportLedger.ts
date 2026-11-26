@@ -316,3 +316,69 @@ export async function exportToPdf(transactions: Transaction[], filter: FilterTyp
     document.body.removeChild(container);
   }
 }
+
+export async function captureElementAsPngBlob(element: HTMLElement): Promise<Blob | null> {
+  const canvas = await html2canvas(element, {
+    scale: 2,
+    backgroundColor: '#ffffff',
+    useCORS: true,
+  });
+
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => resolve(blob), 'image/png', 1.0);
+  });
+}
+
+export async function exportElementToImage(element: HTMLElement, fileBaseName: string): Promise<void> {
+  const canvas = await html2canvas(element, {
+    scale: 2,
+    backgroundColor: '#ffffff',
+    useCORS: true,
+  });
+
+  const dataUrl = canvas.toDataURL('image/png');
+  const link = document.createElement('a');
+  link.href = dataUrl;
+  link.download = `${fileBaseName}.png`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+export async function exportElementToPdf(element: HTMLElement, fileBaseName: string): Promise<void> {
+  const canvas = await html2canvas(element, {
+    scale: 2,
+    backgroundColor: '#ffffff',
+    useCORS: true,
+  });
+
+  const imgData = canvas.toDataURL('image/png');
+  const pdf = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  const margin = 10;
+  const printableWidth = pageWidth - margin * 2;
+  const printableHeight = pageHeight - margin * 2;
+
+  const imgHeight = (canvas.height * printableWidth) / canvas.width;
+  let remainingHeight = imgHeight;
+  let yOffset = margin;
+
+  pdf.addImage(imgData, 'PNG', margin, yOffset, printableWidth, imgHeight);
+  remainingHeight -= printableHeight;
+
+  while (remainingHeight > 0) {
+    pdf.addPage();
+    yOffset = margin - (imgHeight - remainingHeight);
+    pdf.addImage(imgData, 'PNG', margin, yOffset, printableWidth, imgHeight);
+    remainingHeight -= printableHeight;
+  }
+
+  pdf.save(`${fileBaseName}.pdf`);
+}
+
